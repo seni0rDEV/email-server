@@ -1,0 +1,19 @@
+{
+  "name": "email-server",
+  "version": "1.0.0",
+  "description": "Email server for AI Workspace - sends invitation emails via EmailJS",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "@emailjs/nodejs": "^1.0.0"
+  },
+  "devDependencies": {
+    "@vercel/node": "^3.0.0",
+    "nodemon": "^3.0.0"
+  }
+}

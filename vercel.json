@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "index.js"
+    }
+  ],
+  "env": {
+    "EMAILJS_SERVICE_ID": "service_gayry4q",
+    "EMAILJS_TEMPLATE_ID": "template_eny93jq",
+    "EMAILJS_PUBLIC_KEY": "j_wWvFJ-ZxO3Vyk4B"
+  }
+}
