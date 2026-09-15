@@ -11,10 +11,5 @@
       "src": "/api/(.*)",
       "dest": "index.js"
     }
-  ],
-  "env": {
-    "EMAILJS_SERVICE_ID": "service_gayry4q",
-    "EMAILJS_TEMPLATE_ID": "template_eny93jq",
-    "EMAILJS_PUBLIC_KEY": "q1TI3q0wDVqojcO_k"
-  }
+  ]
 }
