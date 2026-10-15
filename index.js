@@ -1,32 +1,32 @@
-
 const express = require("express");
 const cors = require("cors");
-const { Resend } = require("resend");
 
 const app = express();
 
-// Middleware
+
+
 app.use(cors());
 app.use(express.json());
 
-// ─── Resend Configuration ───────────────────────────────────────
-// SECRET — injected by Vercel at runtime from the environment.
-// Set it in:
+// ─── Mailjet Configuration ──────────────────────────────────────
+// SECRET — injected by Vercel at runtime from environment variables.
+// Set these in:
 //   Vercel → Project → Settings → Environment Variables
-//   Key: RESEND_API_KEY   (starts with "re_")
-const RESEND_KEY   = process.env.RESEND_KEY;
+//   MAILJET_API_KEY      (the "API Key" from Mailjet)
+//   MAILJET_SECRET_KEY   (the "Secret Key" from Mailjet)
+//   MAILJET_FROM         (optional, defaults to your verified Gmail)
+const MAILJET_API_KEY = process.env.MAILJET_API_KEY;
+const MAILJET_SECRET_KEY = process.env.MAILJET_SECRET_KEY;
 
-// The "from" address. Must be on a domain you've verified in Resend,
-// OR use "onboarding@resend.dev" for testing (only sends to your own
-// Resend account email).
-const FROM_ADDRESS =
-  process.env.RESEND_FROM || "AI Workspace <onboarding@resend.dev>";
+// Must exactly match the verified sender address in Mailjet.
+const FROM_EMAIL = process.env.MAILJET_FROM || "lioneldestiny111@gmail.com";
+const FROM_NAME = "AI Workspace";
 
-if (!RESEND_KEY) {
-  console.warn("⚠️  RESEND_KEY is not set. /api/send-invite will fail.");
+if (!MAILJET_API_KEY || !MAILJET_SECRET_KEY) {
+  console.warn(
+    "⚠️  MAILJET_API_KEY or MAILJET_SECRET_KEY is not set. /api/send-invite will fail.",
+  );
 }
-
-const resend = new Resend(RESEND_KEY);
 
 // ─── Debug endpoints ────────────────────────────────────────────
 
@@ -38,13 +38,14 @@ app.get("/api/health", (req, res) => {
 app.get("/api/test-config", (req, res) => {
   console.log("✅ Test config called");
   res.json({
-    provider: "resend",
-    apiKey: RESEND_KEY ? "✅ Set" : "❌ Not set",
-    from: FROM_ADDRESS,
+    provider: "mailjet",
+    apiKey: MAILJET_API_KEY ? "✅ Set" : "❌ Not set",
+    secretKey: MAILJET_SECRET_KEY ? "✅ Set" : "❌ Not set",
+    from: FROM_EMAIL,
   });
 });
 
-// ─── Shared email builder ───────────────────────────────────────
+// ─── Shared email builder (unchanged) ───────────────────────────
 
 function buildInviteEmail({
   toName,
@@ -84,6 +85,8 @@ function buildInviteEmail({
   return { html, text };
 }
 
+// ─── Mailjet send ───────────────────────────────────────────────
+
 async function sendInviteEmail(payload) {
   const { toEmail, toName, spaceName, inviterName, role, inviteLink } = payload;
 
@@ -95,8 +98,10 @@ async function sendInviteEmail(payload) {
     throw err;
   }
 
-  if (!RESEND_KEY) {
-    const err = new Error("Server misconfigured: RESEND_KEY is missing");
+  if (!MAILJET_API_KEY || !MAILJET_SECRET_KEY) {
+    const err = new Error(
+      "Server misconfigured: MAILJET_API_KEY / MAILJET_SECRET_KEY is missing",
+    );
     err.statusCode = 500;
     throw err;
   }
@@ -109,23 +114,66 @@ async function sendInviteEmail(payload) {
     inviteLink,
   });
 
-  const result = await resend.emails.send({
-    from: FROM_ADDRESS,
-    to: toEmail,
-    subject: `${inviterName || "Someone"} invited you to ${spaceName}`,
-    html,
-    text,
+  // Mailjet uses Basic Auth: base64(apiKey:secretKey)
+  const authHeader =
+    "Basic " +
+    Buffer.from(`${MAILJET_API_KEY}:${MAILJET_SECRET_KEY}`).toString("base64");
+
+  const body = {
+    Messages: [
+      {
+        From: {
+          Email: FROM_EMAIL,
+          Name: FROM_NAME,
+        },
+        To: [
+          {
+            Email: toEmail,
+            Name: toName || toEmail.split("@")[0],
+          },
+        ],
+        Subject: `${inviterName || "Someone"} invited you to ${spaceName}`,
+        HTMLPart: html,
+        TextPart: text,
+      },
+    ],
+  };
+
+  const response = await fetch("https://api.mailjet.com/v3.1/send", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: authHeader,
+    },
+    body: JSON.stringify(body),
   });
 
-  // Resend's SDK returns { data, error } instead of throwing.
-  if (result.error) {
-    const err = new Error(result.error.message || "Resend API error");
-    err.statusCode = result.error.statusCode || 500;
-    err.details = result.error;
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const err = new Error(
+      data?.Messages?.[0]?.Errors?.[0]?.ErrorMessage ||
+        data?.ErrorMessage ||
+        `Mailjet API error (HTTP ${response.status})`,
+    );
+    err.statusCode = response.status;
+    err.details = data;
     throw err;
   }
 
-  return result.data;
+  // Mailjet returns 200 even when individual messages fail — check per-message.
+  const msgStatus = data?.Messages?.[0]?.Status;
+  if (msgStatus && msgStatus !== "success") {
+    const err = new Error(
+      data?.Messages?.[0]?.Errors?.[0]?.ErrorMessage ||
+        "Mailjet rejected the message",
+    );
+    err.statusCode = 400;
+    err.details = data;
+    throw err;
+  }
+
+  return data?.Messages?.[0] || data;
 }
 
 // ─── Send invitation ────────────────────────────────────────────
@@ -137,7 +185,7 @@ app.post("/api/send-invite", async (req, res) => {
   try {
     const data = await sendInviteEmail(req.body);
     console.log("✅ Email sent successfully:", data);
-    res.json({ success: true, messageId: data?.id || null });
+    res.json({ success: true, messageId: data?.To?.[0]?.MessageID || null });
   } catch (error) {
     console.error("❌ Detailed error:", {
       message: error.message,
@@ -162,7 +210,7 @@ app.post("/api/resend-invite", async (req, res) => {
   try {
     const data = await sendInviteEmail(req.body);
     console.log(`✅ Resent email to ${req.body.toEmail}`);
-    res.json({ success: true, messageId: data?.id || null });
+    res.json({ success: true, messageId: data?.To?.[0]?.MessageID || null });
   } catch (error) {
     console.error("❌ Error resending email:", error);
     res.status(error.statusCode || 500).json({
@@ -171,7 +219,5 @@ app.post("/api/resend-invite", async (req, res) => {
     });
   }
 });
-
-// ─── Export for Vercel ──────────────────────────────────────────
 
 module.exports = app;
