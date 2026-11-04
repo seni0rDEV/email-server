@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const path = require("path"); // Added to handle file paths
+const path = require("path");
 
 const app = express();
 
@@ -17,7 +17,6 @@ if (!RESEND_API_KEY) {
 }
 
 // ─── Serve the Invite HTML Page ─────────────────────────────────
-// This tells Express to send your invite.html file when the user clicks the email link
 app.get("/invite", (req, res) => {
   res.sendFile(path.join(__dirname, "invite.html"));
 });
@@ -50,7 +49,7 @@ function buildInviteEmail({
   const safeRole = role || "member";
   const year = new Date().getFullYear();
 
-  // Points to the /invite route we just created above
+  // Generate the correct link using the token
   const inviteLink = `https://dandori.online/invite?token=${inviteToken}`;
 
   const html = `
@@ -74,12 +73,13 @@ function buildInviteEmail({
 // ─── Resend send ───────────────────────────────────────────────
 
 async function sendInviteEmail(payload) {
-  const { toEmail, toName, spaceName, inviterName, role, inviteToken } =
-    payload;
+  // 1. Destructure BOTH inviteToken and inviteLink from the payload
+  const { toEmail, toName, spaceName, inviterName, role, inviteToken, inviteLink } = payload;
 
-  if (!toEmail || !spaceName || !inviteToken) {
+  // 2. Validate that we have at least ONE of them
+  if (!toEmail || !spaceName || (!inviteToken && !inviteLink)) {
     const err = new Error(
-      "Missing required fields: toEmail, spaceName, and inviteToken are required",
+      "Missing required fields: toEmail, spaceName, and inviteToken (or inviteLink) are required",
     );
     err.statusCode = 400;
     throw err;
@@ -91,13 +91,37 @@ async function sendInviteEmail(payload) {
     throw err;
   }
 
+  // 3. Determine the actual token to use
+  let finalToken = inviteToken;
+  
+  // If Flutter sent the old "inviteLink" instead of "inviteToken", extract the token from it
+  if (!finalToken && inviteLink) {
+    try {
+      // Example inviteLink: "https://yourapp.com/invite?token=kLwX8jKvW7iJuV6hItU5gHsT4fGrS3eF"
+      const url = new URL(inviteLink);
+      finalToken = url.searchParams.get("token");
+    } catch (e) {
+      // Fallback if URL parsing fails (e.g., malformed string)
+      finalToken = inviteLink.split("token=").pop();
+    }
+  }
+
+  // Safety check: if we still don't have a token after extraction
+  if (!finalToken) {
+    const err = new Error("Could not extract a valid token from the provided link.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // 4. Build the email using the finalToken
   const { html, text } = buildInviteEmail({
     toName,
     spaceName,
     inviterName,
     role,
-    inviteToken,
+    inviteToken: finalToken, 
   });
+
   const authHeader = `Bearer ${RESEND_API_KEY}`;
   const fromString = `${FROM_NAME} <${FROM_EMAIL}>`;
 
