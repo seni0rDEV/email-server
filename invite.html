@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Opening AI Workspace...</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; text-align: center; padding: 50px 20px; color: #333; }
+        .box { max-width: 500px; margin: 0 auto; border: 1px solid #ddd; padding: 30px; border-radius: 12px; }
+        .btn { background: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin-top: 20px; }
+    </style>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+
+        if (token) {
+            // NOTE: Replace "aiworkspace" with your actual app's custom scheme (AndroidManifest.xml)
+            const appLink = `aiworkspace://invite?token=${token}`;
+            
+            // Try to open the local app immediately
+            window.location.href = appLink;
+
+            // If the app doesn't open within 2.5 seconds, show the manual fallback
+            setTimeout(() => {
+                document.getElementById('fallback').style.display = 'block';
+            }, 2500);
+        } else {
+            document.getElementById('fallback').innerText = "Invalid invite link. Missing token.";
+            document.getElementById('fallback').style.display = 'block';
+        }
+    </script>
+</head>
+<body>
+    <div class="box">
+        <h2>Opening AI Workspace...</h2>
+        <p>Please wait while we redirect you to the app.</p>
+        
+        <div id="fallback" style="display: none; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
+            <p><strong>Did nothing happen?</strong></p>
+            <p>Since you are developing this app locally, ensure the app is currently running on your laptop.</p>
+            <a href="#" id="manual-btn" class="btn">Click here to open app manually</a>
+        </div>
+    </div>
+    <script>
+        // Set the manual button link if token exists
+        if (token) {
+            document.getElementById('manual-btn').href = `aiworkspace://invite?token=${token}`;
+        }
+    </script>
+</body>
+</html>
